@@ -1,5 +1,7 @@
 package com.elias.headcollection;
 
+import com.mojang.authlib.GameProfile;
+import com.mojang.authlib.properties.Property;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.GameMode;
@@ -21,12 +23,9 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
-import org.bukkit.profile.PlayerProfile;
-import org.bukkit.profile.PlayerTextures;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.net.MalformedURLException;
-import java.net.URL;
+import java.lang.reflect.Field;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -35,21 +34,28 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
     private final Map<UUID, Set<String>> playerHeadCollections = new HashMap<>();
     private final Map<UUID, Set<String>> mobHeadCollections = new HashMap<>();
 
-    // Grau-blaues Fragezeichen-Kopf Icon
+    // Grauer Fragezeichen-Kopf von dir
     private static final String QUESTION_MARK_TEXTURE = "http://textures.minecraft.net/texture/26e6645a440f73bfb8d274f4a1b0cd0271f52233abd07a477b1e7dd7e84b4bd";
 
-    // Texturen für Mobs ohne nativen Block-Kopf
+    // Texturen für Custom-Mob-Köpfe (Enderman, Ghast, Blaze, Warden, Schaf etc.)
     private static final Map<EntityType, String> MOB_TEXTURES = new HashMap<>() {{
-        put(EntityType.GHAST, "http://textures.minecraft.net/texture/8b6a3b21ac964db0714f970d73760e435f5493da167c1308a32a0d0d82d4");
-        put(EntityType.ENDERMITE, "http://textures.minecraft.net/texture/5a133f938fcf52278912d0943265ef0d8be92f7638069a53be86c8f8b80e81c1");
-        put(EntityType.SPIDER, "http://textures.minecraft.net/texture/cd541541b7b5087c80918712a4413e1150494cf0722e03d360027f3f18e9d");
-        put(EntityType.SHEEP, "http://textures.minecraft.net/texture/f31f9ccc6b3e32f35c36149734570162590ec0e6d60ecf640621379ef510a2f");
         put(EntityType.ENDERMAN, "http://textures.minecraft.net/texture/7aae3104a79815a375e23da1e309dd0e9f1a0e1b6f007f311c10712f5a0459c");
+        put(EntityType.GHAST, "http://textures.minecraft.net/texture/8b6a3b21ac964db0714f970d73760e435f5493da167c1308a32a0d0d82d4");
         put(EntityType.BLAZE, "http://textures.minecraft.net/texture/b720ee28f2334863f6aed5ed1ec93e7f91885a535f21e06915809796856417");
         put(EntityType.WARDEN, "http://textures.minecraft.net/texture/918ed9b80ec18d360b9432f913d758f844781423719875e53e414168ee296a");
+        put(EntityType.SPIDER, "http://textures.minecraft.net/texture/cd541541b7b5087c80918712a4413e1150494cf0722e03d360027f3f18e9d");
+        put(EntityType.SHEEP, "http://textures.minecraft.net/texture/f31f9ccc6b3e32f35c36149734570162590ec0e6d60ecf640621379ef510a2f");
+        put(EntityType.ENDERMITE, "http://textures.minecraft.net/texture/5a133f938fcf52278912d0943265ef0d8be92f7638069a53be86c8f8b80e81c1");
     }};
 
-    private final List<EntityType> allMobsList = new ArrayList<>();
+    // Kategorien-Einteilung der Mobs
+    private final Map<String, List<EntityType>> mobCategories = new LinkedHashMap<>() {{
+        put("Overworld", Arrays.asList(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.CREEPER, EntityType.SPIDER, EntityType.SHEEP, EntityType.COW, EntityType.PIG, EntityType.CHICKEN, EntityType.ENDERMAN));
+        put("Nether", Arrays.asList(EntityType.GHAST, EntityType.BLAZE, EntityType.WITHER_SKELETON, EntityType.PIGLIN, EntityType.MAGMA_CUBE, EntityType.PIGLIN_BRUTE, EntityType.STRIDER));
+        put("The End", Arrays.asList(EntityType.ENDER_DRAGON, EntityType.SHULKER, EntityType.ENDERMITE));
+        put("Raids & Illager", Arrays.asList(EntityType.PILLAGER, EntityType.EVOKER, EntityType.VINDICATOR, EntityType.RAVAGER, EntityType.WITCH));
+        put("Bosses & Dungeons", Arrays.asList(EntityType.WARDEN, EntityType.WITHER, EntityType.ELDER_GUARDIAN));
+    }};
 
     @Override
     public void onEnable() {
@@ -60,15 +66,7 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         Objects.requireNonNull(getCommand("playerheads")).setExecutor(this);
         Objects.requireNonNull(getCommand("mobheads")).setExecutor(this);
 
-        // Dynamisch ALLE Mobs in Minecraft erfassen
-        for (EntityType type : EntityType.values()) {
-            if (type.isAlive() && type != EntityType.PLAYER) {
-                allMobsList.add(type);
-            }
-        }
-        allMobsList.sort(Comparator.comparing(EntityType::name));
-
-        getLogger().info("HeadCollection erfolgreich aktiv! Mobs geladen: " + allMobsList.size());
+        getLogger().info("HeadCollection erfolgreich gestartet!");
     }
 
     @Override
@@ -108,7 +106,7 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
             player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 0.8f, 1.0f);
             return true;
         } else if (label.equalsIgnoreCase("mobheads")) {
-            openMobHeadCatalog(player, 0);
+            openMobCategoryMenu(player);
             player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 0.8f, 1.0f);
             return true;
         }
@@ -131,13 +129,37 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         ItemStack mobIcon = createCustomHead(QUESTION_MARK_TEXTURE, ChatColor.GREEN + "Mob-Köpfe Katalog");
         ItemMeta mMeta = mobIcon.getItemMeta();
         if (mMeta != null) {
-            mMeta.setLore(Arrays.asList(ChatColor.GRAY + "Sammle alle Mob-Köpfe der Welt!", ChatColor.YELLOW + "Klicken zum Öffnen"));
+            mMeta.setLore(Arrays.asList(ChatColor.GRAY + "Sammle alle Mob-Köpfe nach Kategorien!", ChatColor.YELLOW + "Klicken zum Öffnen"));
             mobIcon.setItemMeta(mMeta);
         }
 
         inv.setItem(11, playerIcon);
         inv.setItem(15, mobIcon);
         player.openInventory(inv);
+    }
+
+    // --- NEU: Kategorien-Auswahlmenü ---
+    private void openMobCategoryMenu(Player player) {
+        Inventory inv = Bukkit.createInventory(null, 27, ChatColor.DARK_GREEN + "Mob-Kategorien");
+
+        inv.setItem(10, createCategoryItem(Material.GRASS_BLOCK, ChatColor.GREEN + "Overworld"));
+        inv.setItem(12, createCategoryItem(Material.NETHERRACK, ChatColor.RED + "Nether"));
+        inv.setItem(14, createCategoryItem(Material.END_STONE, ChatColor.YELLOW + "The End"));
+        inv.setItem(15, createCategoryItem(Material.CROSSBOW, ChatColor.GOLD + "Raids & Illager"));
+        inv.setItem(16, createCategoryItem(Material.DRAGON_HEAD, ChatColor.DARK_PURPLE + "Bosses & Dungeons"));
+
+        player.openInventory(inv);
+    }
+
+    private ItemStack createCategoryItem(Material mat, String name) {
+        ItemStack item = new ItemStack(mat);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.setDisplayName(name);
+            meta.setLore(Collections.singletonList(ChatColor.YELLOW + "Klicken zum Öffnen"));
+            item.setItemMeta(meta);
+        }
+        return item;
     }
 
     @EventHandler
@@ -242,7 +264,6 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
             return createCustomHead(MOB_TEXTURES.get(type), ChatColor.GOLD + formatMobName(type) + " Kopf");
         }
 
-        // Korrigierte Switch-Anweisung mit den exakten Enum-Konstanten
         Material mat = switch (type) {
             case CREEPER -> Material.CREEPER_HEAD;
             case ZOMBIE -> Material.ZOMBIE_HEAD;
@@ -261,15 +282,16 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         return item;
     }
 
-    private void openMobHeadCatalog(Player player, int page) {
-        Inventory inv = Bukkit.createInventory(null, 54, ChatColor.DARK_GREEN + "Mob-Katalog (S. " + (page + 1) + ")");
+    private void openMobHeadCategoryPage(Player player, String categoryName, int page) {
+        List<EntityType> mobs = mobCategories.getOrDefault(categoryName, Collections.emptyList());
+        Inventory inv = Bukkit.createInventory(null, 54, ChatColor.DARK_GREEN + categoryName + " (S. " + (page + 1) + ")");
         Set<String> collectedMobs = mobHeadCollections.getOrDefault(player.getUniqueId(), new HashSet<>());
 
         int start = page * 45;
-        int end = Math.min(start + 45, allMobsList.size());
+        int end = Math.min(start + 45, mobs.size());
 
         for (int i = start; i < end; i++) {
-            EntityType type = allMobsList.get(i);
+            EntityType type = mobs.get(i);
             boolean unlocked = collectedMobs.contains(type.name());
 
             ItemStack item;
@@ -286,7 +308,7 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
             inv.setItem(i - start, item);
         }
 
-        fillBottomRow(inv, page, allMobsList.size());
+        fillBottomRow(inv, page, mobs.size());
         player.openInventory(inv);
     }
 
@@ -328,26 +350,28 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         return name.substring(0, 1).toUpperCase() + name.substring(1);
     }
 
+    // Zuverlässige Erstellung von Custom Heads via GameProfile & Reflection
     private ItemStack createCustomHead(String urlString, String displayName) {
         ItemStack head = new ItemStack(Material.PLAYER_HEAD);
         if (urlString == null || urlString.isEmpty()) return head;
 
-        SkullMeta meta = (SkullMeta) head.getItemMeta();
-        if (meta == null) return head;
+        SkullMeta headMeta = (SkullMeta) head.getItemMeta();
+        if (headMeta == null) return head;
 
-        PlayerProfile profile = Bukkit.createPlayerProfile(UUID.randomUUID());
-        PlayerTextures textures = profile.getTextures();
+        GameProfile profile = new GameProfile(UUID.randomUUID(), null);
+        byte[] encodedData = Base64.getEncoder().encode(String.format("{\"textures\":{\"SKIN\":{\"url\":\"%s\"}}}", urlString).getBytes());
+        profile.getProperties().put("textures", new Property("textures", new String(encodedData)));
 
         try {
-            textures.setSkin(new URL(urlString));
-            profile.setTextures(textures);
-            meta.setOwnerProfile(profile);
-        } catch (MalformedURLException e) {
+            Field profileField = headMeta.getClass().getDeclaredField("profile");
+            profileField.setAccessible(true);
+            profileField.set(headMeta, profile);
+        } catch (NoSuchFieldException | IllegalAccessException e) {
             e.printStackTrace();
         }
 
-        meta.setDisplayName(displayName);
-        head.setItemMeta(meta);
+        headMeta.setDisplayName(displayName);
+        head.setItemMeta(headMeta);
         return head;
     }
 
@@ -356,7 +380,7 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         if (!(event.getWhoClicked() instanceof Player)) return;
         String title = event.getView().getTitle();
 
-        if (title.contains("Kopf-Sammlungen") || title.contains("Spieler-Katalog") || title.contains("Mob-Katalog")) {
+        if (title.contains("Kopf-Sammlungen") || title.contains("Mob-Kategorien") || title.contains("Spieler-Katalog") || isMobCategoryTitle(title)) {
             event.setCancelled(true);
             Player player = (Player) event.getWhoClicked();
             int slot = event.getSlot();
@@ -366,9 +390,16 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
                     openPlayerHeadCatalog(player, 0);
                     player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1.0f, 1.0f);
                 } else if (slot == 15) {
-                    openMobHeadCatalog(player, 0);
+                    openMobCategoryMenu(player);
                     player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1.0f, 1.0f);
                 }
+            } else if (title.contains("Mob-Kategorien")) {
+                if (slot == 10) openMobHeadCategoryPage(player, "Overworld", 0);
+                else if (slot == 12) openMobHeadCategoryPage(player, "Nether", 0);
+                else if (slot == 14) openMobHeadCategoryPage(player, "The End", 0);
+                else if (slot == 15) openMobHeadCategoryPage(player, "Raids & Illager", 0);
+                else if (slot == 16) openMobHeadCategoryPage(player, "Bosses & Dungeons", 0);
+                player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1.0f, 1.0f);
             } else if (title.contains("Spieler-Katalog")) {
                 int currentPage = getCurrentPageFromTitle(title);
                 if (slot == 53 && event.getCurrentItem() != null && event.getCurrentItem().getType() == Material.ARROW) {
@@ -378,17 +409,29 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
                     openPlayerHeadCatalog(player, currentPage - 1);
                     player.playSound(player.getLocation(), Sound.ITEM_BOOK_PAGE_TURN, 1.0f, 1.0f);
                 }
-            } else if (title.contains("Mob-Katalog")) {
+            } else if (isMobCategoryTitle(title)) {
+                String catName = getCategoryFromTitle(title);
                 int currentPage = getCurrentPageFromTitle(title);
                 if (slot == 53 && event.getCurrentItem() != null && event.getCurrentItem().getType() == Material.ARROW) {
-                    openMobHeadCatalog(player, currentPage + 1);
+                    openMobHeadCategoryPage(player, catName, currentPage + 1);
                     player.playSound(player.getLocation(), Sound.ITEM_BOOK_PAGE_TURN, 1.0f, 1.0f);
                 } else if (slot == 45 && event.getCurrentItem() != null && event.getCurrentItem().getType() == Material.ARROW) {
-                    openMobHeadCatalog(player, currentPage - 1);
+                    openMobHeadCategoryPage(player, catName, currentPage - 1);
                     player.playSound(player.getLocation(), Sound.ITEM_BOOK_PAGE_TURN, 1.0f, 1.0f);
                 }
             }
         }
+    }
+
+    private boolean isMobCategoryTitle(String title) {
+        return mobCategories.keySet().stream().anyMatch(title::contains);
+    }
+
+    private String getCategoryFromTitle(String title) {
+        for (String cat : mobCategories.keySet()) {
+            if (title.contains(cat)) return cat;
+        }
+        return "Overworld";
     }
 
     private int getCurrentPageFromTitle(String title) {
