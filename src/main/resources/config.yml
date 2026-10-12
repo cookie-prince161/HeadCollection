@@ -1,16 +1,17 @@
 # HeadCollection Konfiguration
-# Zu Testzwecken stehen alle Drop-Chancen standardmäßig auf 100.0 Prozent (1.0).
+# Im Creative-Modus gilt IMMER 100% Drop-Chance!
+# Im Survival-Modus gelten folgende Wahrscheinlichkeiten (0.01 = 1%, 0.1 = 10%, 1.0 = 100%):
 
 drop-chances:
-  DEFAULT: 1.0      # 100% für Standard-Mobs
-  ZOMBIE: 1.0
-  CREEPER: 1.0
-  SKELETON: 1.0
-  SPIDER: 1.0
-  GHAST: 1.0
-  ENDERMITE: 1.0
-  SHEEP: 1.0
-  ENDER_DRAGON: 1.0 # Alternativ durch Einsammeln des Schiffs-Kopfs
+  DEFAULT: 0.05       # 5% Standard
+  ZOMBIE: 0.001       # 0.1% (wegen Zombie-Farmen)
+  CREEPER: 0.001      # 0.1% (wegen Creeper-Farmen)
+  SKELETON: 0.005     # 0.5%
+  SPIDER: 0.02        # 2%
+  SHEEP: 0.02         # 2%
+  GHAST: 0.10         # 10% (selten zu töten)
+  ENDERMITE: 0.20     # 20% (sehr selten)
+  ENDER_DRAGON: 1.0   # 100%
 
 messages:
   head-dropped: "&aEin seltener &e{mob} &aKopf wurde fallen gelassen!"
