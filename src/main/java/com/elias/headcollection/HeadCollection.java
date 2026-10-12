@@ -1,7 +1,5 @@
 package com.elias.headcollection;
 
-import com.mojang.authlib.GameProfile;
-import com.mojang.authlib.properties.Property;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.GameMode;
@@ -23,9 +21,12 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
+import org.bukkit.profile.PlayerProfile;
+import org.bukkit.profile.PlayerTextures;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.lang.reflect.Field;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -34,7 +35,7 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
     private final Map<UUID, Set<String>> playerHeadCollections = new HashMap<>();
     private final Map<UUID, Set<String>> mobHeadCollections = new HashMap<>();
 
-    // Deine geschickte Fragezeichen-Textur URL -> Base64 kodiert
+    // Deine Fragezeichen-Textur URL
     private static final String QUESTION_MARK_TEXTURE = "http://textures.minecraft.net/texture/2fcac6928e0c09f22063166cf1ebca8302157688c7b088f7e424e93c9e4e840c";
 
     // Textur-URLs für Mobs ohne Vanilla-Kopf
@@ -202,9 +203,8 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         Player killer = entity.getKiller();
 
         if (killer != null && trackedMobs.contains(entity.getType())) {
-            // Im Creative Mode immer 100% Drop-Chance, sonst Config-Wert
-            double chance = (killer.getGameMode() == GameMode.CREATIVE) 
-                    ? 1.0 
+            double chance = (killer.getGameMode() == GameMode.CREATIVE)
+                    ? 1.0
                     : getConfig().getDouble("drop-chances." + entity.getType().name(), getConfig().getDouble("drop-chances.DEFAULT", 0.05));
 
             if (Math.random() <= chance) {
@@ -259,7 +259,6 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
             if (unlocked) {
                 item = getMobHeadItem(type);
             } else {
-                // Fragezeichen-Kopf mit deiner Textur
                 item = createCustomHead(QUESTION_MARK_TEXTURE, ChatColor.RED + type.name() + " (Fehlt noch!)");
                 ItemMeta meta = item.getItemMeta();
                 if (meta != null) {
@@ -283,28 +282,27 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         player.openInventory(inv);
     }
 
-    // Hilfsmethode zur Erstellung von Custom Skull Items über Textur-URLs
-    private ItemStack createCustomHead(String url, String displayName) {
+    // Modernes & sicheres Erstellen von Custom Heads via Bukkit API
+    private ItemStack createCustomHead(String urlString, String displayName) {
         ItemStack head = new ItemStack(Material.PLAYER_HEAD);
-        if (url == null || url.isEmpty()) return head;
+        if (urlString == null || urlString.isEmpty()) return head;
 
-        SkullMeta headMeta = (SkullMeta) head.getItemMeta();
-        if (headMeta == null) return head;
+        SkullMeta meta = (SkullMeta) head.getItemMeta();
+        if (meta == null) return head;
 
-        GameProfile profile = new GameProfile(UUID.randomUUID(), null);
-        byte[] encodedData = Base64.getEncoder().encode(String.format("{\"textures\":{\"SKIN\":{\"url\":\"%s\"}}}", url).getBytes());
-        profile.getProperties().put("textures", new Property("textures", new String(encodedData)));
+        PlayerProfile profile = Bukkit.createPlayerProfile(UUID.randomUUID());
+        PlayerTextures textures = profile.getTextures();
 
         try {
-            Field profileField = headMeta.getClass().getDeclaredField("profile");
-            profileField.setAccessible(true);
-            profileField.set(headMeta, profile);
-        } catch (NoSuchFieldException | IllegalAccessException e) {
+            textures.setSkin(new URL(urlString));
+            profile.setTextures(textures);
+            meta.setOwnerProfile(profile);
+        } catch (MalformedURLException e) {
             e.printStackTrace();
         }
 
-        headMeta.setDisplayName(displayName);
-        head.setItemMeta(headMeta);
+        meta.setDisplayName(displayName);
+        head.setItemMeta(meta);
         return head;
     }
 
