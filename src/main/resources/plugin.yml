@@ -1,0 +1,17 @@
+name: HeadCollection
+version: 1.0
+main: com.elias.headcollection.HeadCollection
+api-version: 1.20
+description: Ein hochentwickeltes Spieler- und Mob-Kopf-Sammelsystem mit GUIs und anpassbaren Drop-Chancen.
+commands:
+  headcollection:
+  
+    description: Öffnet das Hauptmenü der Kopf-Sammlungen.
+    aliases: [heads, hc]
+    usage: /headcollection
+  playerheads:
+    description: Öffnet direkt die Spieler-Trophäensammlung.
+    usage: /playerheads
+  mobheads:
+    description: Öffnet direkt die Mob-Kopfsammlung.
+    usage: /mobheads
