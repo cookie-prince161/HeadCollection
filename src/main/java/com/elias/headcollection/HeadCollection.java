@@ -1,10 +1,13 @@
 package com.elias.headcollection;
 
+import com.mojang.authlib.GameProfile;
+import com.mojang.authlib.properties.Property;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
-import org.bukkit.Sound;
+import org.bukkit.GameMode;
 import org.bukkit.Material;
 import org.bukkit.OfflinePlayer;
+import org.bukkit.Sound;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -22,6 +25,7 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.lang.reflect.Field;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -30,11 +34,22 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
     private final Map<UUID, Set<String>> playerHeadCollections = new HashMap<>();
     private final Map<UUID, Set<String>> mobHeadCollections = new HashMap<>();
 
+    // Deine geschickte Fragezeichen-Textur URL -> Base64 kodiert
+    private static final String QUESTION_MARK_TEXTURE = "http://textures.minecraft.net/texture/2fcac6928e0c09f22063166cf1ebca8302157688c7b088f7e424e93c9e4e840c";
+
+    // Textur-URLs für Mobs ohne Vanilla-Kopf
+    private static final Map<EntityType, String> MOB_TEXTURES = new HashMap<>() {{
+        put(EntityType.GHAST, "http://textures.minecraft.net/texture/8b6a3b21ac964db0714f970d73760e435f5493da167c1308a32a0d0d82d4");
+        put(EntityType.ENDERMITE, "http://textures.minecraft.net/texture/5a133f938fcf52278912d0943265ef0d8be92f7638069a53be86c8f8b80e81c1");
+        put(EntityType.SPIDER, "http://textures.minecraft.net/texture/cd541541b7b5087c80918712a4413e1150494cf0722e03d360027f3f18e9d");
+        put(EntityType.SHEEP, "http://textures.minecraft.net/texture/f31f9ccc6b3e32f35c36149734570162590ec0e6d60ecf640621379ef510a2f");
+    }};
+
     @Override
     public void onEnable() {
         saveDefaultConfig();
         getServer().getPluginManager().registerEvents(this, this);
-        
+
         Objects.requireNonNull(getCommand("headcollection")).setExecutor(this);
         Objects.requireNonNull(getCommand("playerheads")).setExecutor(this);
         Objects.requireNonNull(getCommand("mobheads")).setExecutor(this);
@@ -85,10 +100,9 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
             playerIcon.setItemMeta(pMeta);
         }
 
-        ItemStack mobIcon = new ItemStack(Material.CREEPER_HEAD);
+        ItemStack mobIcon = createCustomHead(MOB_TEXTURES.getOrDefault(EntityType.GHAST, QUESTION_MARK_TEXTURE), ChatColor.GREEN + "Mob-Köpfe Katalog");
         ItemMeta mMeta = mobIcon.getItemMeta();
         if (mMeta != null) {
-            mMeta.setDisplayName(ChatColor.GREEN + "Mob-Köpfe Katalog");
             mMeta.setLore(Arrays.asList(ChatColor.GRAY + "Sammle alle Mob-Köpfe der Welt!", ChatColor.YELLOW + "Klicken zum Öffnen"));
             mobIcon.setItemMeta(mMeta);
         }
@@ -119,8 +133,8 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
             Set<String> collected = playerHeadCollections.get(killerUUID);
 
             if (collected.add(victim.getName())) {
-                killer.sendMessage(ChatColor.translateAlternateColorCodes('&', 
-                    Objects.requireNonNull(getConfig().getString("messages.catalog-unlocked")).replace("{name}", victim.getName())));
+                killer.sendMessage(ChatColor.translateAlternateColorCodes('&',
+                        Objects.requireNonNull(getConfig().getString("messages.catalog-unlocked")).replace("{name}", victim.getName())));
                 killer.playSound(killer.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 1.0f, 1.0f);
             }
         }
@@ -128,8 +142,7 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
 
     private void openPlayerHeadCatalog(Player player, int page) {
         Inventory inv = Bukkit.createInventory(null, 54, ChatColor.DARK_BLUE + "Spieler-Katalog (Seite " + (page + 1) + ")");
-        
-        // KORREKTUR: Arrays.stream(...) statt Bukkit.getOfflinePlayers().stream()
+
         List<String> allPlayers = Arrays.stream(Bukkit.getOfflinePlayers())
                 .map(OfflinePlayer::getName)
                 .filter(Objects::nonNull)
@@ -143,19 +156,24 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
 
         for (int i = start; i < end; i++) {
             String targetName = allPlayers.get(i);
-            ItemStack head = new ItemStack(Material.PLAYER_HEAD);
-            SkullMeta meta = (SkullMeta) head.getItemMeta();
-            if (meta != null) {
-                OfflinePlayer offPlayer = Bukkit.getOfflinePlayer(targetName);
-                meta.setOwningPlayer(offPlayer);
-                if (collected.contains(targetName)) {
+            ItemStack head;
+
+            if (collected.contains(targetName)) {
+                head = new ItemStack(Material.PLAYER_HEAD);
+                SkullMeta meta = (SkullMeta) head.getItemMeta();
+                if (meta != null) {
+                    meta.setOwningPlayer(Bukkit.getOfflinePlayer(targetName));
                     meta.setDisplayName(ChatColor.GREEN + targetName);
                     meta.setLore(Arrays.asList(ChatColor.DARK_GREEN + "✔ Bereits gesammelt!", ChatColor.GRAY + "Getötet & Trophäe gesichert."));
-                } else {
-                    meta.setDisplayName(ChatColor.RED + "??? (Fehlt)");
-                    meta.setLore(Arrays.asList(ChatColor.DARK_RED + "✘ Noch nicht freigeschaltet", ChatColor.GRAY + "Besiege diesen Spieler, um den Kopf zu erhalten."));
+                    head.setItemMeta(meta);
                 }
-                head.setItemMeta(meta);
+            } else {
+                head = createCustomHead(QUESTION_MARK_TEXTURE, ChatColor.RED + "??? (Fehlt)");
+                ItemMeta meta = head.getItemMeta();
+                if (meta != null) {
+                    meta.setLore(Arrays.asList(ChatColor.DARK_RED + "✘ Noch nicht freigeschaltet", ChatColor.GRAY + "Besiege diesen Spieler, um den Kopf zu erhalten."));
+                    head.setItemMeta(meta);
+                }
             }
             inv.setItem(i - start, head);
         }
@@ -174,7 +192,7 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
     }
 
     private final List<EntityType> trackedMobs = Arrays.asList(
-            EntityType.ZOMBIE, EntityType.CREEPER, EntityType.SKELETON, 
+            EntityType.ZOMBIE, EntityType.CREEPER, EntityType.SKELETON,
             EntityType.SPIDER, EntityType.GHAST, EntityType.ENDERMITE, EntityType.SHEEP
     );
 
@@ -184,7 +202,11 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         Player killer = entity.getKiller();
 
         if (killer != null && trackedMobs.contains(entity.getType())) {
-            double chance = getConfig().getDouble("drop-chances." + entity.getType().name(), 1.0);
+            // Im Creative Mode immer 100% Drop-Chance, sonst Config-Wert
+            double chance = (killer.getGameMode() == GameMode.CREATIVE) 
+                    ? 1.0 
+                    : getConfig().getDouble("drop-chances." + entity.getType().name(), getConfig().getDouble("drop-chances.DEFAULT", 0.05));
+
             if (Math.random() <= chance) {
                 ItemStack mobHead = getMobHeadItem(entity.getType());
                 entity.getWorld().dropItemNaturally(entity.getLocation(), mobHead);
@@ -203,6 +225,10 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
     }
 
     private ItemStack getMobHeadItem(EntityType type) {
+        if (MOB_TEXTURES.containsKey(type)) {
+            return createCustomHead(MOB_TEXTURES.get(type), ChatColor.GOLD + type.name() + " Kopf");
+        }
+
         Material mat = switch (type) {
             case CREEPER -> Material.CREEPER_HEAD;
             case ZOMBIE -> Material.ZOMBIE_HEAD;
@@ -233,11 +259,11 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
             if (unlocked) {
                 item = getMobHeadItem(type);
             } else {
-                item = new ItemStack(Material.PLAYER_HEAD);
-                SkullMeta meta = (SkullMeta) item.getItemMeta();
+                // Fragezeichen-Kopf mit deiner Textur
+                item = createCustomHead(QUESTION_MARK_TEXTURE, ChatColor.RED + type.name() + " (Fehlt noch!)");
+                ItemMeta meta = item.getItemMeta();
                 if (meta != null) {
-                    meta.setDisplayName(ChatColor.RED + type.name() + " (Fehlt noch!)");
-                    meta.setLore(Arrays.asList(ChatColor.DARK_RED + "✘ Noch nicht gefunden", ChatColor.GRAY + "Töte dieses Mob, um die Chance zu nutzen."));
+                    meta.setLore(Arrays.asList(ChatColor.DARK_RED + "✘ Noch nicht gefunden", ChatColor.GRAY + "Töte dieses Mob im Survival, um die Chance zu nutzen."));
                     item.setItemMeta(meta);
                 }
             }
@@ -255,6 +281,31 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         }
 
         player.openInventory(inv);
+    }
+
+    // Hilfsmethode zur Erstellung von Custom Skull Items über Textur-URLs
+    private ItemStack createCustomHead(String url, String displayName) {
+        ItemStack head = new ItemStack(Material.PLAYER_HEAD);
+        if (url == null || url.isEmpty()) return head;
+
+        SkullMeta headMeta = (SkullMeta) head.getItemMeta();
+        if (headMeta == null) return head;
+
+        GameProfile profile = new GameProfile(UUID.randomUUID(), null);
+        byte[] encodedData = Base64.getEncoder().encode(String.format("{\"textures\":{\"SKIN\":{\"url\":\"%s\"}}}", url).getBytes());
+        profile.getProperties().put("textures", new Property("textures", new String(encodedData)));
+
+        try {
+            Field profileField = headMeta.getClass().getDeclaredField("profile");
+            profileField.setAccessible(true);
+            profileField.set(headMeta, profile);
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            e.printStackTrace();
+        }
+
+        headMeta.setDisplayName(displayName);
+        head.setItemMeta(headMeta);
+        return head;
     }
 
     @EventHandler
