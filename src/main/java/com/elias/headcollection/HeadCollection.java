@@ -1,8 +1,9 @@
+package com.elias.headcollection;
+
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Sound;
 import org.bukkit.Material;
-import org.bukkit.NamespacedKey;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -12,16 +13,13 @@ import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
-import org.bukkit.event.block.Action;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
-import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.*;
@@ -29,8 +27,6 @@ import java.util.stream.Collectors;
 
 public final class HeadCollection extends JavaPlugin implements Listener, CommandExecutor {
 
-    // Datenspeicher (In-Memory / Vereinfacht für Prototyp, wird über YAML/Daten erweitert)
-    // Map<UUID, Set<String>> -> Spieler-UUID -> Liste gesammelter Spieler-Namen / Mob-Namen
     private final Map<UUID, Set<String>> playerHeadCollections = new HashMap<>();
     private final Map<UUID, Set<String>> mobHeadCollections = new HashMap<>();
 
@@ -39,12 +35,11 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         saveDefaultConfig();
         getServer().getPluginManager().registerEvents(this, this);
         
-        // Commands registrieren
         Objects.requireNonNull(getCommand("headcollection")).setExecutor(this);
         Objects.requireNonNull(getCommand("playerheads")).setExecutor(this);
         Objects.requireNonNull(getCommand("mobheads")).setExecutor(this);
 
-        getLogger().info("HeadCollection erfolgreich aktiviert! Test-Dropchancen stehen auf 100%.");
+        getLogger().info("HeadCollection erfolgreich aktiviert!");
     }
 
     @Override
@@ -78,11 +73,9 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         return false;
     }
 
-    // --- GUI: Hauptauswahl zwischen Spieler- und Mob-Katalog ---
     private void openMainChoiceMenu(Player player) {
         Inventory inv = Bukkit.createInventory(null, 27, ChatColor.DARK_PURPLE + "Kopf-Sammlungen");
 
-        // Spieler-Köpfe Icon
         ItemStack playerIcon = new ItemStack(Material.PLAYER_HEAD);
         SkullMeta pMeta = (SkullMeta) playerIcon.getItemMeta();
         if (pMeta != null) {
@@ -92,7 +85,6 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
             playerIcon.setItemMeta(pMeta);
         }
 
-        // Mob-Köpfe Icon
         ItemStack mobIcon = new ItemStack(Material.CREEPER_HEAD);
         ItemMeta mMeta = mobIcon.getItemMeta();
         if (mMeta != null) {
@@ -106,14 +98,12 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         player.openInventory(inv);
     }
 
-    // --- SPIELER-KÖPFE LOGIK & GUI ---
     @EventHandler
     public void onPlayerDeath(PlayerDeathEvent event) {
         Player victim = event.getEntity();
         Player killer = victim.getKiller();
 
         if (killer != null && !killer.equals(victim)) {
-            // Kopf des Opfers droppen
             ItemStack head = new ItemStack(Material.PLAYER_HEAD);
             SkullMeta meta = (SkullMeta) head.getItemMeta();
             if (meta != null) {
@@ -124,7 +114,6 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
             }
             victim.getWorld().dropItemNaturally(victim.getLocation(), head);
 
-            // Zum Katalog des Killers hinzufügen (falls erster Kill)
             UUID killerUUID = killer.getUniqueId();
             playerHeadCollections.putIfAbsent(killerUUID, new HashSet<>());
             Set<String> collected = playerHeadCollections.get(killerUUID);
@@ -138,11 +127,10 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
     }
 
     private void openPlayerHeadCatalog(Player player, int page) {
-        // Double-Chest mit 54 Slots (Zeile 6 reserviert für Navigation)
         Inventory inv = Bukkit.createInventory(null, 54, ChatColor.DARK_BLUE + "Spieler-Katalog (Seite " + (page + 1) + ")");
         
-        // Alle bekannten Spieler auf dem Server holen (oder Beispiel-Liste)
-        List<String> allPlayers = Bukkit.getOfflinePlayers().stream()
+        // KORREKTUR: Arrays.stream(...) statt Bukkit.getOfflinePlayers().stream()
+        List<String> allPlayers = Arrays.stream(Bukkit.getOfflinePlayers())
                 .map(OfflinePlayer::getName)
                 .filter(Objects::nonNull)
                 .sorted()
@@ -172,7 +160,6 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
             inv.setItem(i - start, head);
         }
 
-        // Navigation in der untersten Zeile (Slot 53 = Nächste Seite)
         if (end < allPlayers.size()) {
             ItemStack nextButton = new ItemStack(Material.ARROW);
             ItemMeta nMeta = nextButton.getItemMeta();
@@ -186,7 +173,6 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         player.openInventory(inv);
     }
 
-    // --- MOB-KÖPFE LOGIK & GUI ---
     private final List<EntityType> trackedMobs = Arrays.asList(
             EntityType.ZOMBIE, EntityType.CREEPER, EntityType.SKELETON, 
             EntityType.SPIDER, EntityType.GHAST, EntityType.ENDERMITE, EntityType.SHEEP
@@ -198,13 +184,11 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         Player killer = entity.getKiller();
 
         if (killer != null && trackedMobs.contains(entity.getType())) {
-            // Mit 100% Dropchance für Tests
             double chance = getConfig().getDouble("drop-chances." + entity.getType().name(), 1.0);
             if (Math.random() <= chance) {
                 ItemStack mobHead = getMobHeadItem(entity.getType());
                 entity.getWorld().dropItemNaturally(entity.getLocation(), mobHead);
 
-                // Katalog-Eintrag aktualisieren
                 UUID killerUUID = killer.getUniqueId();
                 mobHeadCollections.putIfAbsent(killerUUID, new HashSet<>());
                 Set<String> collectedMobs = mobHeadCollections.get(killerUUID);
@@ -223,7 +207,7 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
             case CREEPER -> Material.CREEPER_HEAD;
             case ZOMBIE -> Material.ZOMBIE_HEAD;
             case SKELETON -> Material.SKELETON_SKULL;
-            default -> Material.PLAYER_HEAD; // Fallback
+            default -> Material.PLAYER_HEAD;
         };
         ItemStack item = new ItemStack(mat);
         ItemMeta meta = item.getItemMeta();
@@ -249,7 +233,6 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
             if (unlocked) {
                 item = getMobHeadItem(type);
             } else {
-                // Platzhalter / Fragezeichen-Kopf für fehlende Mobs
                 item = new ItemStack(Material.PLAYER_HEAD);
                 SkullMeta meta = (SkullMeta) item.getItemMeta();
                 if (meta != null) {
@@ -274,7 +257,6 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         player.openInventory(inv);
     }
 
-    // --- GUI-KLICK INTERAKTIONEN ---
     @EventHandler
     public void onInventoryClick(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player)) return;
