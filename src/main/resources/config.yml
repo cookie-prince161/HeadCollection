@@ -1,0 +1,18 @@
+# HeadCollection Konfiguration
+# Zu Testzwecken stehen alle Drop-Chancen standardmäßig auf 100.0 Prozent (1.0).
+
+drop-chances:
+  DEFAULT: 1.0      # 100% für Standard-Mobs
+  ZOMBIE: 1.0
+  CREEPER: 1.0
+  SKELETON: 1.0
+  SPIDER: 1.0
+  GHAST: 1.0
+  ENDERMITE: 1.0
+  SHEEP: 1.0
+  ENDER_DRAGON: 1.0 # Alternativ durch Einsammeln des Schiffs-Kopfs
+
+messages:
+  head-dropped: "&aEin seltener &e{mob} &aKopf wurde fallen gelassen!"
+  catalog-unlocked: "&6[Sammlung] &aDu hast den Kopf von &e{name} &aerfolgreich freigeschaltet!"
+  already-unlocked: "&7Dieser Kopf befindet sich bereits in deiner Sammlung."
