@@ -2,6 +2,7 @@ package com.elias.headcollection;
 
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.GameMode;
 import org.bukkit.Material;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.Sound;
@@ -20,12 +21,11 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
-import org.bukkit.profile.PlayerProfile;
-import org.bukkit.profile.PlayerTextures;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.net.MalformedURLException;
-import java.net.URL;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -37,7 +37,7 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
     // Grauer Fragezeichen-Kopf
     private static final String QUESTION_MARK_TEXTURE = "http://textures.minecraft.net/texture/26e6645a440f73bfb8d274f4a1b0cd0271f52233abd07a477b1e7dd7e84b4bd";
 
-    // Texturen für Custom-Mob-Köpfe
+    // Echte Texture-URLs für Minecraft-Mobs
     private static final Map<EntityType, String> MOB_TEXTURES = new HashMap<>() {{
         put(EntityType.ENDERMAN, "http://textures.minecraft.net/texture/7aae3104a79815a375e23da1e309dd0e9f1a0e1b6f007f311c10712f5a0459c");
         put(EntityType.GHAST, "http://textures.minecraft.net/texture/8b6a3b21ac964db0714f970d73760e435f5493da167c1308a32a0d0d82d4");
@@ -48,13 +48,12 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         put(EntityType.ENDERMITE, "http://textures.minecraft.net/texture/5a133f938fcf52278912d0943265ef0d8be92f7638069a53be86c8f8b80e81c1");
     }};
 
-    // Kategorien-Einteilung der Mobs
-    private final Map<String, List<EntityType>> mobCategories = new LinkedHashMap<>() {{
+    // Kategorien: Jede Liste ist genau EINE Kiste im Menü
+    private final List<String> categoryNames = Arrays.asList("Overworld", "Nether", "The End");
+    private final Map<String, List<EntityType>> categories = new LinkedHashMap<>() {{
         put("Overworld", Arrays.asList(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.CREEPER, EntityType.SPIDER, EntityType.SHEEP, EntityType.COW, EntityType.PIG, EntityType.CHICKEN, EntityType.ENDERMAN));
         put("Nether", Arrays.asList(EntityType.GHAST, EntityType.BLAZE, EntityType.WITHER_SKELETON, EntityType.PIGLIN, EntityType.MAGMA_CUBE, EntityType.PIGLIN_BRUTE, EntityType.STRIDER));
         put("The End", Arrays.asList(EntityType.ENDER_DRAGON, EntityType.SHULKER, EntityType.ENDERMITE));
-        put("Raids & Illager", Arrays.asList(EntityType.PILLAGER, EntityType.EVOKER, EntityType.VINDICATOR, EntityType.RAVAGER, EntityType.WITCH));
-        put("Bosses & Dungeons", Arrays.asList(EntityType.WARDEN, EntityType.WITHER, EntityType.ELDER_GUARDIAN));
     }};
 
     @Override
@@ -66,16 +65,12 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         Objects.requireNonNull(getCommand("playerheads")).setExecutor(this);
         Objects.requireNonNull(getCommand("mobheads")).setExecutor(this);
 
-        getLogger().info("HeadCollection erfolgreich gestartet!");
+        getLogger().info("HeadCollection gestartet!");
     }
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (!(sender instanceof Player)) {
-            sender.sendMessage("Dieser Befehl kann nur von Spielern ausgeführt werden.");
-            return true;
-        }
-
+        if (!(sender instanceof Player)) return true;
         Player player = (Player) sender;
 
         if (label.equalsIgnoreCase("headcollection") || label.equalsIgnoreCase("heads") || label.equalsIgnoreCase("hc")) {
@@ -89,25 +84,18 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
                     head.setItemMeta(meta);
                 }
                 player.getWorld().dropItemNaturally(player.getLocation(), head);
-
                 playerHeadCollections.putIfAbsent(player.getUniqueId(), new HashSet<>());
                 playerHeadCollections.get(player.getUniqueId()).add(targetName);
-
-                player.sendMessage(ChatColor.GREEN + "[Test] Kopf von " + targetName + " gespawnt & freigeschaltet!");
-                player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
+                player.sendMessage(ChatColor.GREEN + "[Test] Kopf von " + targetName + " gespawnt!");
                 return true;
             }
-
             openMainChoiceMenu(player);
-            player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1.0f, 1.2f);
             return true;
         } else if (label.equalsIgnoreCase("playerheads")) {
             openPlayerHeadCatalog(player, 0);
-            player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 0.8f, 1.0f);
             return true;
         } else if (label.equalsIgnoreCase("mobheads")) {
-            openMobCategoryMenu(player);
-            player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 0.8f, 1.0f);
+            openMobHeadCategory(player, 0);
             return true;
         }
 
@@ -122,43 +110,13 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         if (pMeta != null) {
             pMeta.setOwningPlayer(player);
             pMeta.setDisplayName(ChatColor.GOLD + "Spieler-Trophäen");
-            pMeta.setLore(Arrays.asList(ChatColor.GRAY + "Sammle die Köpfe besiegter Spieler!", ChatColor.YELLOW + "Klicken zum Öffnen"));
             playerIcon.setItemMeta(pMeta);
         }
 
         ItemStack mobIcon = createCustomHead(QUESTION_MARK_TEXTURE, ChatColor.GREEN + "Mob-Köpfe Katalog");
-        ItemMeta mMeta = mobIcon.getItemMeta();
-        if (mMeta != null) {
-            mMeta.setLore(Arrays.asList(ChatColor.GRAY + "Sammle alle Mob-Köpfe nach Kategorien!", ChatColor.YELLOW + "Klicken zum Öffnen"));
-            mobIcon.setItemMeta(mMeta);
-        }
-
         inv.setItem(11, playerIcon);
         inv.setItem(15, mobIcon);
         player.openInventory(inv);
-    }
-
-    private void openMobCategoryMenu(Player player) {
-        Inventory inv = Bukkit.createInventory(null, 27, ChatColor.DARK_GREEN + "Mob-Kategorien");
-
-        inv.setItem(10, createCategoryItem(Material.GRASS_BLOCK, ChatColor.GREEN + "Overworld"));
-        inv.setItem(12, createCategoryItem(Material.NETHERRACK, ChatColor.RED + "Nether"));
-        inv.setItem(14, createCategoryItem(Material.END_STONE, ChatColor.YELLOW + "The End"));
-        inv.setItem(15, createCategoryItem(Material.CROSSBOW, ChatColor.GOLD + "Raids & Illager"));
-        inv.setItem(16, createCategoryItem(Material.DRAGON_HEAD, ChatColor.DARK_PURPLE + "Bosses & Dungeons"));
-
-        player.openInventory(inv);
-    }
-
-    private ItemStack createCategoryItem(Material mat, String name) {
-        ItemStack item = new ItemStack(mat);
-        ItemMeta meta = item.getItemMeta();
-        if (meta != null) {
-            meta.setDisplayName(name);
-            meta.setLore(Collections.singletonList(ChatColor.YELLOW + "Klicken zum Öffnen"));
-            item.setItemMeta(meta);
-        }
-        return item;
     }
 
     @EventHandler
@@ -172,26 +130,16 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
             if (meta != null) {
                 meta.setOwningPlayer(victim);
                 meta.setDisplayName(ChatColor.YELLOW + "Kopf von " + victim.getName());
-                meta.setLore(Collections.singletonList(ChatColor.GRAY + "Getötet von " + killer.getName()));
                 head.setItemMeta(meta);
             }
             victim.getWorld().dropItemNaturally(victim.getLocation(), head);
-
-            UUID killerUUID = killer.getUniqueId();
-            playerHeadCollections.putIfAbsent(killerUUID, new HashSet<>());
-            Set<String> collected = playerHeadCollections.get(killerUUID);
-
-            if (collected.add(victim.getName())) {
-                killer.sendMessage(ChatColor.translateAlternateColorCodes('&',
-                        Objects.requireNonNull(getConfig().getString("messages.catalog-unlocked")).replace("{name}", victim.getName())));
-                killer.playSound(killer.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 1.0f, 1.0f);
-            }
+            playerHeadCollections.putIfAbsent(killer.getUniqueId(), new HashSet<>());
+            playerHeadCollections.get(killer.getUniqueId()).add(victim.getName());
         }
     }
 
     private void openPlayerHeadCatalog(Player player, int page) {
         Inventory inv = Bukkit.createInventory(null, 54, ChatColor.DARK_BLUE + "Spieler-Katalog (S. " + (page + 1) + ")");
-
         List<String> allPlayers = Arrays.stream(Bukkit.getOfflinePlayers())
                 .map(OfflinePlayer::getName)
                 .filter(Objects::nonNull)
@@ -199,35 +147,27 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
                 .collect(Collectors.toList());
 
         Set<String> collected = playerHeadCollections.getOrDefault(player.getUniqueId(), new HashSet<>());
-
         int start = page * 45;
         int end = Math.min(start + 45, allPlayers.size());
 
         for (int i = start; i < end; i++) {
             String targetName = allPlayers.get(i);
             ItemStack head;
-
             if (collected.contains(targetName)) {
                 head = new ItemStack(Material.PLAYER_HEAD);
                 SkullMeta meta = (SkullMeta) head.getItemMeta();
                 if (meta != null) {
                     meta.setOwningPlayer(Bukkit.getOfflinePlayer(targetName));
                     meta.setDisplayName(ChatColor.GREEN + targetName);
-                    meta.setLore(Arrays.asList(ChatColor.DARK_GREEN + "✔ Bereits gesammelt!", ChatColor.GRAY + "Getötet & Trophäe gesichert."));
                     head.setItemMeta(meta);
                 }
             } else {
                 head = createCustomHead(QUESTION_MARK_TEXTURE, ChatColor.RED + "??? (Fehlt)");
-                ItemMeta meta = head.getItemMeta();
-                if (meta != null) {
-                    meta.setLore(Arrays.asList(ChatColor.DARK_RED + "✘ Noch nicht freigeschaltet", ChatColor.GRAY + "Besiege diesen Spieler, um den Kopf zu erhalten."));
-                    head.setItemMeta(meta);
-                }
             }
             inv.setItem(i - start, head);
         }
 
-        fillBottomRow(inv, page, allPlayers.size());
+        fillBottomRow(inv, page > 0, end < allPlayers.size());
         player.openInventory(inv);
     }
 
@@ -237,23 +177,17 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         Player killer = entity.getKiller();
 
         if (killer != null) {
-            double chance = (killer.getGameMode() == org.bukkit.GameMode.CREATIVE)
+            double chance = (killer.getGameMode() == GameMode.CREATIVE)
                     ? 1.0
-                    : getConfig().getDouble("drop-chances." + entity.getType().name(), getConfig().getDouble("drop-chances.DEFAULT", 0.05));
+                    : getConfig().getDouble("drop-chances." + entity.getType().name(), 0.05);
 
             if (Math.random() <= chance) {
                 ItemStack mobHead = getMobHeadItem(entity.getType());
                 entity.getWorld().dropItemNaturally(entity.getLocation(), mobHead);
 
-                UUID killerUUID = killer.getUniqueId();
-                mobHeadCollections.putIfAbsent(killerUUID, new HashSet<>());
-                Set<String> collectedMobs = mobHeadCollections.get(killerUUID);
-
-                if (collectedMobs.add(entity.getType().name())) {
-                    killer.sendMessage(ChatColor.translateAlternateColorCodes('&',
-                            Objects.requireNonNull(getConfig().getString("messages.head-dropped")).replace("{mob}", entity.getType().name().toLowerCase())));
-                    killer.playSound(killer.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.5f);
-                }
+                mobHeadCollections.putIfAbsent(killer.getUniqueId(), new HashSet<>());
+                mobHeadCollections.get(killer.getUniqueId()).add(entity.getType().name());
+                killer.sendMessage(ChatColor.GREEN + "Du hast den Kopf von " + formatMobName(entity.getType()) + " erhalten!");
             }
         }
     }
@@ -281,37 +215,28 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         return item;
     }
 
-    private void openMobHeadCategoryPage(Player player, String categoryName, int page) {
-        List<EntityType> mobs = mobCategories.getOrDefault(categoryName, Collections.emptyList());
-        Inventory inv = Bukkit.createInventory(null, 54, ChatColor.DARK_GREEN + categoryName + " (S. " + (page + 1) + ")");
+    private void openMobHeadCategory(Player player, int categoryIndex) {
+        if (categoryIndex < 0 || categoryIndex >= categoryNames.size()) return;
+        String catName = categoryNames.get(categoryIndex);
+        List<EntityType> mobs = categories.get(catName);
+
+        Inventory inv = Bukkit.createInventory(null, 54, ChatColor.DARK_GREEN + "Kategorie: " + catName);
         Set<String> collectedMobs = mobHeadCollections.getOrDefault(player.getUniqueId(), new HashSet<>());
 
-        int start = page * 45;
-        int end = Math.min(start + 45, mobs.size());
-
-        for (int i = start; i < end; i++) {
+        for (int i = 0; i < mobs.size(); i++) {
             EntityType type = mobs.get(i);
-            boolean unlocked = collectedMobs.contains(type.name());
-
-            ItemStack item;
-            if (unlocked) {
-                item = getMobHeadItem(type);
-            } else {
-                item = createCustomHead(QUESTION_MARK_TEXTURE, ChatColor.RED + formatMobName(type) + " (Fehlt noch!)");
-                ItemMeta meta = item.getItemMeta();
-                if (meta != null) {
-                    meta.setLore(Arrays.asList(ChatColor.DARK_RED + "✘ Noch nicht gefunden", ChatColor.GRAY + "Töte dieses Mob im Survival, um die Chance zu nutzen."));
-                    item.setItemMeta(meta);
-                }
-            }
-            inv.setItem(i - start, item);
+            ItemStack item = collectedMobs.contains(type.name())
+                    ? getMobHeadItem(type)
+                    : createCustomHead(QUESTION_MARK_TEXTURE, ChatColor.RED + formatMobName(type) + " (Fehlt noch!)");
+            inv.setItem(i, item);
         }
 
-        fillBottomRow(inv, page, mobs.size());
+        // Pfeile für Vorwärts/Rückwärts durch die Kategorien-Kisten
+        fillBottomRow(inv, categoryIndex > 0, categoryIndex < categoryNames.size() - 1);
         player.openInventory(inv);
     }
 
-    private void fillBottomRow(Inventory inv, int page, int totalItems) {
+    private void fillBottomRow(Inventory inv, boolean hasPrev, boolean hasNext) {
         ItemStack glass = new ItemStack(Material.GRAY_STAINED_GLASS_PANE);
         ItemMeta gMeta = glass.getItemMeta();
         if (gMeta != null) {
@@ -323,21 +248,21 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
             inv.setItem(i, glass);
         }
 
-        if (page > 0) {
+        if (hasPrev) {
             ItemStack prev = new ItemStack(Material.ARROW);
             ItemMeta pMeta = prev.getItemMeta();
             if (pMeta != null) {
-                pMeta.setDisplayName(ChatColor.YELLOW + "◄ Vorherige Seite");
+                pMeta.setDisplayName(ChatColor.YELLOW + "◄ Vorherige Kiste");
                 prev.setItemMeta(pMeta);
             }
             inv.setItem(45, prev);
         }
 
-        if ((page + 1) * 45 < totalItems) {
+        if (hasNext) {
             ItemStack next = new ItemStack(Material.ARROW);
             ItemMeta nMeta = next.getItemMeta();
             if (nMeta != null) {
-                nMeta.setDisplayName(ChatColor.YELLOW + "Nächste Seite ➔");
+                nMeta.setDisplayName(ChatColor.YELLOW + "Nächste Kiste ➔");
                 next.setItemMeta(nMeta);
             }
             inv.setItem(53, next);
@@ -349,27 +274,39 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         return name.substring(0, 1).toUpperCase() + name.substring(1);
     }
 
-    // Modernes & 100% Bukkit-konformes Laden von Custom-Skins ohne Mojang-Imports
+    // Sichere Reflection-Methode zur Erstellung echter Custom-Köpfe
     private ItemStack createCustomHead(String urlString, String displayName) {
         ItemStack head = new ItemStack(Material.PLAYER_HEAD);
         if (urlString == null || urlString.isEmpty()) return head;
 
-        SkullMeta meta = (SkullMeta) head.getItemMeta();
-        if (meta == null) return head;
-
-        PlayerProfile profile = Bukkit.createPlayerProfile(UUID.randomUUID());
-        PlayerTextures textures = profile.getTextures();
+        SkullMeta headMeta = (SkullMeta) head.getItemMeta();
+        if (headMeta == null) return head;
 
         try {
-            textures.setSkin(new URL(urlString));
-            profile.setTextures(textures);
-            meta.setOwnerProfile(profile);
-        } catch (MalformedURLException e) {
+            Class<?> gameProfileClass = Class.forName("com.mojang.authlib.GameProfile");
+            Class<?> propertyClass = Class.forName("com.mojang.authlib.properties.Property");
+
+            Constructor<?> gameProfileConstructor = gameProfileClass.getConstructor(UUID.class, String.class);
+            Object profile = gameProfileConstructor.newInstance(UUID.randomUUID(), null);
+
+            byte[] encodedData = Base64.getEncoder().encode(String.format("{\"textures\":{\"SKIN\":{\"url\":\"%s\"}}}", urlString).getBytes());
+            Constructor<?> propertyConstructor = propertyClass.getConstructor(String.class, String.class);
+            Object property = propertyConstructor.newInstance("textures", new String(encodedData));
+
+            Method getPropertiesMethod = gameProfileClass.getMethod("getProperties");
+            Object propertiesMap = getPropertiesMethod.invoke(profile);
+            Method putMethod = propertiesMap.getClass().getMethod("put", Object.class, Object.class);
+            putMethod.invoke(propertiesMap, "textures", property);
+
+            Field profileField = headMeta.getClass().getDeclaredField("profile");
+            profileField.setAccessible(true);
+            profileField.set(headMeta, profile);
+        } catch (Exception e) {
             e.printStackTrace();
         }
 
-        meta.setDisplayName(displayName);
-        head.setItemMeta(meta);
+        headMeta.setDisplayName(displayName);
+        head.setItemMeta(headMeta);
         return head;
     }
 
@@ -378,67 +315,23 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         if (!(event.getWhoClicked() instanceof Player)) return;
         String title = event.getView().getTitle();
 
-        if (title.contains("Kopf-Sammlungen") || title.contains("Mob-Kategorien") || title.contains("Spieler-Katalog") || isMobCategoryTitle(title)) {
+        if (title.contains("Kopf-Sammlungen") || title.contains("Spieler-Katalog") || title.contains("Kategorie:")) {
             event.setCancelled(true);
             Player player = (Player) event.getWhoClicked();
             int slot = event.getSlot();
 
             if (title.contains("Kopf-Sammlungen")) {
-                if (slot == 11) {
-                    openPlayerHeadCatalog(player, 0);
-                    player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1.0f, 1.0f);
-                } else if (slot == 15) {
-                    openMobCategoryMenu(player);
-                    player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1.0f, 1.0f);
-                }
-            } else if (title.contains("Mob-Kategorien")) {
-                if (slot == 10) openMobHeadCategoryPage(player, "Overworld", 0);
-                else if (slot == 12) openMobHeadCategoryPage(player, "Nether", 0);
-                else if (slot == 14) openMobHeadCategoryPage(player, "The End", 0);
-                else if (slot == 15) openMobHeadCategoryPage(player, "Raids & Illager", 0);
-                else if (slot == 16) openMobHeadCategoryPage(player, "Bosses & Dungeons", 0);
-                player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1.0f, 1.0f);
-            } else if (title.contains("Spieler-Katalog")) {
-                int currentPage = getCurrentPageFromTitle(title);
-                if (slot == 53 && event.getCurrentItem() != null && event.getCurrentItem().getType() == Material.ARROW) {
-                    openPlayerHeadCatalog(player, currentPage + 1);
-                    player.playSound(player.getLocation(), Sound.ITEM_BOOK_PAGE_TURN, 1.0f, 1.0f);
-                } else if (slot == 45 && event.getCurrentItem() != null && event.getCurrentItem().getType() == Material.ARROW) {
-                    openPlayerHeadCatalog(player, currentPage - 1);
-                    player.playSound(player.getLocation(), Sound.ITEM_BOOK_PAGE_TURN, 1.0f, 1.0f);
-                }
-            } else if (isMobCategoryTitle(title)) {
-                String catName = getCategoryFromTitle(title);
-                int currentPage = getCurrentPageFromTitle(title);
-                if (slot == 53 && event.getCurrentItem() != null && event.getCurrentItem().getType() == Material.ARROW) {
-                    openMobHeadCategoryPage(player, catName, currentPage + 1);
-                    player.playSound(player.getLocation(), Sound.ITEM_BOOK_PAGE_TURN, 1.0f, 1.0f);
-                } else if (slot == 45 && event.getCurrentItem() != null && event.getCurrentItem().getType() == Material.ARROW) {
-                    openMobHeadCategoryPage(player, catName, currentPage - 1);
-                    player.playSound(player.getLocation(), Sound.ITEM_BOOK_PAGE_TURN, 1.0f, 1.0f);
+                if (slot == 11) openPlayerHeadCatalog(player, 0);
+                else if (slot == 15) openMobHeadCategory(player, 0);
+            } else if (title.contains("Kategorie:")) {
+                String currentCat = title.replace(ChatColor.DARK_GREEN + "Kategorie: ", "");
+                int catIndex = categoryNames.indexOf(currentCat);
+                if (slot == 53 && catIndex < categoryNames.size() - 1) {
+                    openMobHeadCategory(player, catIndex + 1);
+                } else if (slot == 45 && catIndex > 0) {
+                    openMobHeadCategory(player, catIndex - 1);
                 }
             }
-        }
-    }
-
-    private boolean isMobCategoryTitle(String title) {
-        return mobCategories.keySet().stream().anyMatch(title::contains);
-    }
-
-    private String getCategoryFromTitle(String title) {
-        for (String cat : mobCategories.keySet()) {
-            if (title.contains(cat)) return cat;
-        }
-        return "Overworld";
-    }
-
-    private int getCurrentPageFromTitle(String title) {
-        try {
-            int start = title.indexOf("S. ") + 3;
-            int end = title.indexOf(")");
-            return Integer.parseInt(title.substring(start, end)) - 1;
-        } catch (Exception e) {
-            return 0;
         }
     }
 }
