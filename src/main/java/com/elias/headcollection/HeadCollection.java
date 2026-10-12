@@ -21,11 +21,12 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
+import org.bukkit.profile.PlayerProfile;
+import org.bukkit.profile.PlayerTextures;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -37,7 +38,7 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
     // Grauer Fragezeichen-Kopf
     private static final String QUESTION_MARK_TEXTURE = "http://textures.minecraft.net/texture/26e6645a440f73bfb8d274f4a1b0cd0271f52233abd07a477b1e7dd7e84b4bd";
 
-    // Echte Texture-URLs für Minecraft-Mobs ohne nativen Vanilla-Kopf
+    // Texturen für Custom-Mob-Köpfe
     private static final Map<EntityType, String> MOB_TEXTURES = new HashMap<>() {{
         put(EntityType.ENDERMAN, "http://textures.minecraft.net/texture/7aae3104a79815a375e23da1e309dd0e9f1a0e1b6f007f311c10712f5a0459c");
         put(EntityType.GHAST, "http://textures.minecraft.net/texture/8b6a3b21ac964db0714f970d73760e435f5493da167c1308a32a0d0d82d4");
@@ -48,7 +49,6 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         put(EntityType.ENDERMITE, "http://textures.minecraft.net/texture/5a133f938fcf52278912d0943265ef0d8be92f7638069a53be86c8f8b80e81c1");
     }};
 
-    // Kategorien: Jede Liste ist genau EINE Kiste im Menü
     private final List<String> categoryNames = Arrays.asList("Overworld", "Nether", "The End");
     private final Map<String, List<EntityType>> categories = new LinkedHashMap<>() {{
         put("Overworld", Arrays.asList(EntityType.ZOMBIE, EntityType.SKELETON, EntityType.CREEPER, EntityType.SPIDER, EntityType.SHEEP, EntityType.COW, EntityType.PIG, EntityType.CHICKEN, EntityType.ENDERMAN));
@@ -198,7 +198,6 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
     }
 
     private ItemStack getMobHeadItem(EntityType type) {
-        // Native Minecraft-Köpfe direkt verwenden (garantiert perfekte Optik ohne URL-Fehler!)
         Material nativeMat = switch (type) {
             case CREEPER -> Material.CREEPER_HEAD;
             case ZOMBIE -> Material.ZOMBIE_HEAD;
@@ -219,7 +218,6 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
             return item;
         }
 
-        // Für Mobs ohne eigenen Block-Kopf nutzen wir die Custom-Textur
         if (MOB_TEXTURES.containsKey(type)) {
             return createCustomHead(MOB_TEXTURES.get(type), ChatColor.GOLD + formatMobName(type) + " Kopf");
         }
@@ -285,39 +283,27 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         return name.substring(0, 1).toUpperCase() + name.substring(1);
     }
 
+    // 100% stabile & offizielle PlayerProfile API (kein Reflection mehr!)
     private ItemStack createCustomHead(String urlString, String displayName) {
         ItemStack head = new ItemStack(Material.PLAYER_HEAD);
         if (urlString == null || urlString.isEmpty()) return head;
 
-        SkullMeta headMeta = (SkullMeta) head.getItemMeta();
-        if (headMeta == null) return head;
+        SkullMeta meta = (SkullMeta) head.getItemMeta();
+        if (meta == null) return head;
+
+        PlayerProfile profile = Bukkit.createPlayerProfile(UUID.randomUUID());
+        PlayerTextures textures = profile.getTextures();
 
         try {
-            Class<?> gameProfileClass = Class.forName("com.mojang.authlib.GameProfile");
-            Class<?> propertyClass = Class.forName("com.mojang.authlib.properties.Property");
-
-            // WICHTIG: Ein valider Profilname verhindert den NullPointerException-Fehler
-            Constructor<?> gameProfileConstructor = gameProfileClass.getConstructor(UUID.class, String.class);
-            Object profile = gameProfileConstructor.newInstance(UUID.randomUUID(), "HeadProfile");
-
-            byte[] encodedData = Base64.getEncoder().encode(String.format("{\"textures\":{\"SKIN\":{\"url\":\"%s\"}}}", urlString).getBytes());
-            Constructor<?> propertyConstructor = propertyClass.getConstructor(String.class, String.class);
-            Object property = propertyConstructor.newInstance("textures", new String(encodedData));
-
-            Method getPropertiesMethod = gameProfileClass.getMethod("getProperties");
-            Object propertiesMap = getPropertiesMethod.invoke(profile);
-            Method putMethod = propertiesMap.getClass().getMethod("put", Object.class, Object.class);
-            putMethod.invoke(propertiesMap, "textures", property);
-
-            Field profileField = headMeta.getClass().getDeclaredField("profile");
-            profileField.setAccessible(true);
-            profileField.set(headMeta, profile);
-        } catch (Exception e) {
+            textures.setSkin(new URL(urlString));
+            profile.setTextures(textures);
+            meta.setOwnerProfile(profile);
+        } catch (MalformedURLException e) {
             e.printStackTrace();
         }
 
-        headMeta.setDisplayName(displayName);
-        head.setItemMeta(headMeta);
+        meta.setDisplayName(displayName);
+        head.setItemMeta(meta);
         return head;
     }
 
