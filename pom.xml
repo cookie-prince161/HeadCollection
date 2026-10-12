@@ -16,11 +16,14 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
-    <!-- HIER: Das Spigot Repository eintragen -->
     <repositories>
         <repository>
             <id>spigotmc-repo</id>
             <url>https://hub.spigotmc.org/nexus/content/repositories/snapshots/</url>
+        </repository>
+        <repository>
+            <id>mojang</id>
+            <url>https://libraries.minecraft.net/</url>
         </repository>
         <repository>
             <id>sonatype</id>
