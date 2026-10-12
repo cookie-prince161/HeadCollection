@@ -6,7 +6,7 @@
 
     <groupId>com.elias</groupId>
     <artifactId>headcollection</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>1.0</version>
     <packaging>jar</packaging>
 
     <name>HeadCollection</name>
@@ -22,17 +22,12 @@
             <url>https://hub.spigotmc.org/nexus/content/repositories/snapshots/</url>
         </repository>
         <repository>
-            <id>mojang</id>
-            <url>https://libraries.minecraft.net/</url>
-        </repository>
-        <repository>
             <id>sonatype</id>
             <url>https://oss.sonatype.org/content/repositories/snapshots</url>
         </repository>
     </repositories>
 
     <dependencies>
-        <!-- Spigot API -->
         <dependency>
             <groupId>org.spigotmc</groupId>
             <artifactId>spigot-api</artifactId>
@@ -42,6 +37,8 @@
     </dependencies>
 
     <build>
+        <!-- Legt den exakten Dateinamen der JAR-Datei fest -->
+        <finalName>HeadCollection</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
