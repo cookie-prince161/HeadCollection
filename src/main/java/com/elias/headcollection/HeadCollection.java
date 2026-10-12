@@ -37,7 +37,7 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
     // Grauer Fragezeichen-Kopf
     private static final String QUESTION_MARK_TEXTURE = "http://textures.minecraft.net/texture/26e6645a440f73bfb8d274f4a1b0cd0271f52233abd07a477b1e7dd7e84b4bd";
 
-    // Echte Texture-URLs für Minecraft-Mobs
+    // Echte Texture-URLs für Minecraft-Mobs ohne nativen Vanilla-Kopf
     private static final Map<EntityType, String> MOB_TEXTURES = new HashMap<>() {{
         put(EntityType.ENDERMAN, "http://textures.minecraft.net/texture/7aae3104a79815a375e23da1e309dd0e9f1a0e1b6f007f311c10712f5a0459c");
         put(EntityType.GHAST, "http://textures.minecraft.net/texture/8b6a3b21ac964db0714f970d73760e435f5493da167c1308a32a0d0d82d4");
@@ -65,7 +65,12 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         Objects.requireNonNull(getCommand("playerheads")).setExecutor(this);
         Objects.requireNonNull(getCommand("mobheads")).setExecutor(this);
 
-        getLogger().info("HeadCollection gestartet!");
+        getLogger().info("HeadCollection erfolgreich gestartet!");
+    }
+
+    @Override
+    public void onDisable() {
+        getLogger().info("HeadCollection deaktiviert.");
     }
 
     @Override
@@ -193,26 +198,33 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
     }
 
     private ItemStack getMobHeadItem(EntityType type) {
-        if (MOB_TEXTURES.containsKey(type)) {
-            return createCustomHead(MOB_TEXTURES.get(type), ChatColor.GOLD + formatMobName(type) + " Kopf");
-        }
-
-        Material mat = switch (type) {
+        // Native Minecraft-Köpfe direkt verwenden (garantiert perfekte Optik ohne URL-Fehler!)
+        Material nativeMat = switch (type) {
             case CREEPER -> Material.CREEPER_HEAD;
             case ZOMBIE -> Material.ZOMBIE_HEAD;
             case SKELETON -> Material.SKELETON_SKULL;
             case WITHER_SKELETON -> Material.WITHER_SKELETON_SKULL;
             case ENDER_DRAGON -> Material.DRAGON_HEAD;
-            default -> Material.PLAYER_HEAD;
+            case PIGLIN -> Material.PIGLIN_HEAD;
+            default -> null;
         };
 
-        ItemStack item = new ItemStack(mat);
-        ItemMeta meta = item.getItemMeta();
-        if (meta != null) {
-            meta.setDisplayName(ChatColor.GOLD + formatMobName(type) + " Kopf");
-            item.setItemMeta(meta);
+        if (nativeMat != null) {
+            ItemStack item = new ItemStack(nativeMat);
+            ItemMeta meta = item.getItemMeta();
+            if (meta != null) {
+                meta.setDisplayName(ChatColor.GOLD + formatMobName(type) + " Kopf");
+                item.setItemMeta(meta);
+            }
+            return item;
         }
-        return item;
+
+        // Für Mobs ohne eigenen Block-Kopf nutzen wir die Custom-Textur
+        if (MOB_TEXTURES.containsKey(type)) {
+            return createCustomHead(MOB_TEXTURES.get(type), ChatColor.GOLD + formatMobName(type) + " Kopf");
+        }
+
+        return createCustomHead(QUESTION_MARK_TEXTURE, ChatColor.GOLD + formatMobName(type) + " Kopf");
     }
 
     private void openMobHeadCategory(Player player, int categoryIndex) {
@@ -231,7 +243,6 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
             inv.setItem(i, item);
         }
 
-        // Pfeile für Vorwärts/Rückwärts durch die Kategorien-Kisten
         fillBottomRow(inv, categoryIndex > 0, categoryIndex < categoryNames.size() - 1);
         player.openInventory(inv);
     }
@@ -274,7 +285,6 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         return name.substring(0, 1).toUpperCase() + name.substring(1);
     }
 
-    // Sichere Reflection-Methode zur Erstellung echter Custom-Köpfe
     private ItemStack createCustomHead(String urlString, String displayName) {
         ItemStack head = new ItemStack(Material.PLAYER_HEAD);
         if (urlString == null || urlString.isEmpty()) return head;
@@ -286,8 +296,9 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
             Class<?> gameProfileClass = Class.forName("com.mojang.authlib.GameProfile");
             Class<?> propertyClass = Class.forName("com.mojang.authlib.properties.Property");
 
+            // WICHTIG: Ein valider Profilname verhindert den NullPointerException-Fehler
             Constructor<?> gameProfileConstructor = gameProfileClass.getConstructor(UUID.class, String.class);
-            Object profile = gameProfileConstructor.newInstance(UUID.randomUUID(), null);
+            Object profile = gameProfileConstructor.newInstance(UUID.randomUUID(), "HeadProfile");
 
             byte[] encodedData = Base64.getEncoder().encode(String.format("{\"textures\":{\"SKIN\":{\"url\":\"%s\"}}}", urlString).getBytes());
             Constructor<?> propertyConstructor = propertyClass.getConstructor(String.class, String.class);
