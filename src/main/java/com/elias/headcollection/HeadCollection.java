@@ -35,10 +35,10 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
     private final Map<UUID, Set<String>> playerHeadCollections = new HashMap<>();
     private final Map<UUID, Set<String>> mobHeadCollections = new HashMap<>();
 
-    // Neuer grauer Fragezeichen-Kopf von dir
+    // Grau-blaues Fragezeichen-Kopf Icon
     private static final String QUESTION_MARK_TEXTURE = "http://textures.minecraft.net/texture/26e6645a440f73bfb8d274f4a1b0cd0271f52233abd07a477b1e7dd7e84b4bd";
 
-    // Vordefinierte Texturen für beliebte Mobs
+    // Texturen für Mobs ohne nativen Block-Kopf
     private static final Map<EntityType, String> MOB_TEXTURES = new HashMap<>() {{
         put(EntityType.GHAST, "http://textures.minecraft.net/texture/8b6a3b21ac964db0714f970d73760e435f5493da167c1308a32a0d0d82d4");
         put(EntityType.ENDERMITE, "http://textures.minecraft.net/texture/5a133f938fcf52278912d0943265ef0d8be92f7638069a53be86c8f8b80e81c1");
@@ -49,7 +49,7 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         put(EntityType.WARDEN, "http://textures.minecraft.net/texture/918ed9b80ec18d360b9432f913d758f844781423719875e53e414168ee296a");
     }};
 
-    private List<EntityType> allMobsList = new ArrayList<>();
+    private final List<EntityType> allMobsList = new ArrayList<>();
 
     @Override
     public void onEnable() {
@@ -60,7 +60,7 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         Objects.requireNonNull(getCommand("playerheads")).setExecutor(this);
         Objects.requireNonNull(getCommand("mobheads")).setExecutor(this);
 
-        // Dynamisch ALLE Mobs in Minecraft registrieren
+        // Dynamisch ALLE Mobs in Minecraft erfassen
         for (EntityType type : EntityType.values()) {
             if (type.isAlive() && type != EntityType.PLAYER) {
                 allMobsList.add(type);
@@ -68,7 +68,7 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         }
         allMobsList.sort(Comparator.comparing(EntityType::name));
 
-        getLogger().info("HeadCollection erfolgreich aktiv! Geladene Mobs: " + allMobsList.size());
+        getLogger().info("HeadCollection erfolgreich aktiv! Mobs geladen: " + allMobsList.size());
     }
 
     @Override
@@ -242,14 +242,16 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
             return createCustomHead(MOB_TEXTURES.get(type), ChatColor.GOLD + formatMobName(type) + " Kopf");
         }
 
+        // Korrigierte Switch-Anweisung mit den exakten Enum-Konstanten
         Material mat = switch (type) {
             case CREEPER -> Material.CREEPER_HEAD;
             case ZOMBIE -> Material.ZOMBIE_HEAD;
             case SKELETON -> Material.SKELETON_SKULL;
             case WITHER_SKELETON -> Material.WITHER_SKELETON_SKULL;
-            case DRAGON -> Material.DRAGON_HEAD;
+            case ENDER_DRAGON -> Material.DRAGON_HEAD;
             default -> Material.PLAYER_HEAD;
         };
+
         ItemStack item = new ItemStack(mat);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
@@ -288,7 +290,6 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         player.openInventory(inv);
     }
 
-    // Zeile 6 (Slots 45–53) verkleiden & Navigation einbauen
     private void fillBottomRow(Inventory inv, int page, int totalItems) {
         ItemStack glass = new ItemStack(Material.GRAY_STAINED_GLASS_PANE);
         ItemMeta gMeta = glass.getItemMeta();
@@ -301,7 +302,6 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
             inv.setItem(i, glass);
         }
 
-        // Vorherige Seite (Slot 45)
         if (page > 0) {
             ItemStack prev = new ItemStack(Material.ARROW);
             ItemMeta pMeta = prev.getItemMeta();
@@ -312,7 +312,6 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
             inv.setItem(45, prev);
         }
 
-        // Nächste Seite (Slot 53)
         if ((page + 1) * 45 < totalItems) {
             ItemStack next = new ItemStack(Material.ARROW);
             ItemMeta nMeta = next.getItemMeta();
