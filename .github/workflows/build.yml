@@ -21,12 +21,11 @@ jobs:
         distribution: 'temurin'
         cache: 'maven'
 
-    - name: Mit Maven kompilieren (Build)
+    - name: Mit Maven kompilieren
       run: mvn clean package
 
     - name: Plugin-Artefakt hochladen
       uses: actions/upload-artifact@v4
       with:
-      
-        name: HeadCollection-Plugin
-        path: target/*.jar
+        name: HeadCollection
+        path: target/HeadCollection.jar
