@@ -1,10 +1,7 @@
 package com.elias.headcollection;
 
-import com.mojang.authlib.GameProfile;
-import com.mojang.authlib.properties.Property;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
-import org.bukkit.GameMode;
 import org.bukkit.Material;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.Sound;
@@ -23,9 +20,12 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
+import org.bukkit.profile.PlayerProfile;
+import org.bukkit.profile.PlayerTextures;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.lang.reflect.Field;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -34,10 +34,10 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
     private final Map<UUID, Set<String>> playerHeadCollections = new HashMap<>();
     private final Map<UUID, Set<String>> mobHeadCollections = new HashMap<>();
 
-    // Grauer Fragezeichen-Kopf von dir
+    // Grauer Fragezeichen-Kopf
     private static final String QUESTION_MARK_TEXTURE = "http://textures.minecraft.net/texture/26e6645a440f73bfb8d274f4a1b0cd0271f52233abd07a477b1e7dd7e84b4bd";
 
-    // Texturen für Custom-Mob-Köpfe (Enderman, Ghast, Blaze, Warden, Schaf etc.)
+    // Texturen für Custom-Mob-Köpfe
     private static final Map<EntityType, String> MOB_TEXTURES = new HashMap<>() {{
         put(EntityType.ENDERMAN, "http://textures.minecraft.net/texture/7aae3104a79815a375e23da1e309dd0e9f1a0e1b6f007f311c10712f5a0459c");
         put(EntityType.GHAST, "http://textures.minecraft.net/texture/8b6a3b21ac964db0714f970d73760e435f5493da167c1308a32a0d0d82d4");
@@ -138,7 +138,6 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         player.openInventory(inv);
     }
 
-    // --- NEU: Kategorien-Auswahlmenü ---
     private void openMobCategoryMenu(Player player) {
         Inventory inv = Bukkit.createInventory(null, 27, ChatColor.DARK_GREEN + "Mob-Kategorien");
 
@@ -238,7 +237,7 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         Player killer = entity.getKiller();
 
         if (killer != null) {
-            double chance = (killer.getGameMode() == GameMode.CREATIVE)
+            double chance = (killer.getGameMode() == org.bukkit.GameMode.CREATIVE)
                     ? 1.0
                     : getConfig().getDouble("drop-chances." + entity.getType().name(), getConfig().getDouble("drop-chances.DEFAULT", 0.05));
 
@@ -350,28 +349,27 @@ public final class HeadCollection extends JavaPlugin implements Listener, Comman
         return name.substring(0, 1).toUpperCase() + name.substring(1);
     }
 
-    // Zuverlässige Erstellung von Custom Heads via GameProfile & Reflection
+    // Modernes & 100% Bukkit-konformes Laden von Custom-Skins ohne Mojang-Imports
     private ItemStack createCustomHead(String urlString, String displayName) {
         ItemStack head = new ItemStack(Material.PLAYER_HEAD);
         if (urlString == null || urlString.isEmpty()) return head;
 
-        SkullMeta headMeta = (SkullMeta) head.getItemMeta();
-        if (headMeta == null) return head;
+        SkullMeta meta = (SkullMeta) head.getItemMeta();
+        if (meta == null) return head;
 
-        GameProfile profile = new GameProfile(UUID.randomUUID(), null);
-        byte[] encodedData = Base64.getEncoder().encode(String.format("{\"textures\":{\"SKIN\":{\"url\":\"%s\"}}}", urlString).getBytes());
-        profile.getProperties().put("textures", new Property("textures", new String(encodedData)));
+        PlayerProfile profile = Bukkit.createPlayerProfile(UUID.randomUUID());
+        PlayerTextures textures = profile.getTextures();
 
         try {
-            Field profileField = headMeta.getClass().getDeclaredField("profile");
-            profileField.setAccessible(true);
-            profileField.set(headMeta, profile);
-        } catch (NoSuchFieldException | IllegalAccessException e) {
+            textures.setSkin(new URL(urlString));
+            profile.setTextures(textures);
+            meta.setOwnerProfile(profile);
+        } catch (MalformedURLException e) {
             e.printStackTrace();
         }
 
-        headMeta.setDisplayName(displayName);
-        head.setItemMeta(headMeta);
+        meta.setDisplayName(displayName);
+        head.setItemMeta(meta);
         return head;
     }
 
